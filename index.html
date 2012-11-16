@@ -1,0 +1,368 @@
+<html lang="it">
+	<head>
+		<meta charset="utf-8"></meta>
+		<link rel="stylesheet" href="reveal.js/css/reveal.css"></link>
+		<link rel="stylesheet" href="reveal.js/css/theme/sky.css"></link>
+		<link rel="stylesheet" href="fonts.css"></style>
+	</head>
+	<body>
+		<div class="reveal">
+			<div class="slides">
+				<section>
+<h1>Sistemi di build alternativi</h1>
+				</section>
+                <section>
+                    <h3>Sistemi di build?</h3>
+                </section>
+				<section>
+				<section>
+<h3>Ma prima...</h3>
+Vediamo come funziona il classico ambiente
+<pre><code>
+./configure
+make
+make install
+</code></pre>
+				</section>
+				<section>
+<pre>.
+├── ant
+│   ├── main.c
+│   └── Makefile
+├── bee
+│   ├── Makefile
+│   ├── parse.c
+│   └── parse.h
+└── Makefile
+</pre>
+<img src="rmch-complete.png"/>
+				</section>
+				<section>
+					/Makefile
+    <pre><code>MODULES = ant bee
+all:
+	for dir in $(MODULES); do \
+		(cd $$dir; ${MAKE} all); \
+	done</code></pre>
+    <br/>
+	/ant/Makefile
+<pre><code>all: main.o
+main.o: main.c ../bee/parse.h
+	$(CC) -I../bee -c main.c</code></pre>
+<img src="rmch-antpartial.png"/>
+	</section>
+	<section>
+	/bee/Makefile
+<pre><code>
+OBJ = ../ant/main.o parse.o
+all: prog
+prog: $(OBJ)
+	$(CC) -o $@ $(OBJ)
+parse.o: parse.c parse.h
+	$(CC) -c parse.c
+</code></pre>
+    <img src="rmch-beepartial.png"/>
+	</section>
+	<section>
+	...e se generassimo parse.{c,h} da una grammatica yacc?
+<pre><code>
+parse.c parse.h: parse.y
+	$(YACC) -d parse.y
+	mv y.tab.c parse.c
+	mv y.tab.h parse.h
+</code></pre>
+    <img src="rmch-wyacc.png"/>
+	</section>
+	<section>
+    <h3>Soluzione 1</h3>
+        <p class="fragment">Riordinare (buildare bee prima di ant)</p>
+        <p class="fragment">ma l'ordine viene ignorato da make -j</p>
+	</section>
+    <section>
+        <h3>Soluzione 2</h3>
+        <p class="fragment">
+			Ripetere
+<pre><code>
+MODULES = ant bee
+all:
+	for dir in $(MODULES); do \
+		(cd $$dir; ${MAKE} all); \
+	done
+	for dir in $(MODULES); do \
+		(cd $$dir; ${MAKE} all); \
+	done</code></pre>
+        </p>
+        <p class="fragment">
+			tempo di build raddoppiato!
+        </p>
+        <p class="fragment">
+			...e non è detto che basti!
+			(sono necessarie tante ripetizioni quanti gli archi che attraversano i moduli del progetto)
+        </p>
+    </section>
+    <section>
+        <h3>Soluzione 3</h3>
+        <p class="fragment">
+			Ribuildare sempre e comunque
+<pre><code>.PHONY: ../bee/parse.h
+../bee/parse.h:
+	cd ../bee; \
+	make clean; \
+	make all</code></pre>
+        </p>
+        <p class="fragment">
+			...ma non siamo ancora compatibili con make -j
+        </p>
+    </section>
+    <section>
+        <h3>Soluzione 4</h3>
+        <p class="fragment">
+			Prevenzione
+        </p>
+        <p class="fragment">
+			ma...
+        </p>
+
+<p class="fragment">
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+<a href="http://aegis.sourceforge.net/auug97.pdf">Miller, P.A. (1998), <i>Recursive Make Considered Harmful, AUUGN Journal of AUUG Inc., 19(1)</i></a>
+</p>
+    </section>
+				</section>
+				<section>
+<section>
+
+<img src="rafael1.png"/>
+
+
+</section>
+<section>
+
+<img src="rafael2.png"/>
+
+</section>
+				</section>
+
+<section>
+
+<section>
+
+<h3>Tup</h3>
+
+Un sistema di build che non è a conoscenza del completo grafo sarà quindi più lento 
+
+</section>
+<section>
+
+Questa era la situazione con make
+<img src="tup-incomplete.png"/>
+
+</section>
+<section>
+
+Tup invece, partendo da un nodo, riesce a ricavare il sottografo parziale minimo
+<img src="tup-partial.png"/>
+
+</section>
+<section>
+
+<ul>
+    <li>Dovendo esaminare tutte le dipendenze: O(n)</li>
+    <li>O(log^2(n))</li>
+</ul>
+</section>
+<section>
+
+<ul>
+    <li>Scalabilità</li>
+    <li>Correttezza</li>
+    <li>Usabilità</li>
+</ul>
+
+<aside class="notes">
+Scalabilità: il tempo di build proporzionale ai cambiamenti che sono stati inseriti
+Correttezza: dallo stato X ad Y, e dallo stato Y ad X
+Usabilità: non dovrebbero esserci passi aggiuntivi per far sì di avere le prime 2 proprietà
+</aside>
+</section>
+<section>
+<h3>Scalabilità</h3>
+I progetti crescono gradualmente, e le operazioni più comuni coinvolgono il rebuil dopo poche modifiche contenute su pochi file
+
+</section>
+<section>
+<h3>Correttezza</h3>
+Evita di costringere lo sviluppatore ad eseguire un
+<pre>make clean</pre>
+nel caso in cui rimangano vecchi target nel tree, moduli esterni potrebbero iniziare a dipendervi, nascondendo il problema fino a quando il file non verrà cancellato manualmente
+</section>
+<section>
+    <h3>Usabilità</h3>
+Evitare l'impatto sulle performance con un
+<pre>cd foo; make</pre>
+rischia di avere effetti diversi sul risultato rispetto ad un semplice
+<pre>make</pre>
+e costringe lo sviluppatore a memorizzare queste differenze
+</section>
+<section>
+<h3>Il bound O(n) di Make e simili </h3>
+Questi sistemi di build, percorrono l'albero delle dipendenze, verificando se sia necessario aggiornarli uno per uno
+
+Ma per fare questa decisione, occorre analizzare tutte le dipendenze a ritroso
+</section>
+<section>
+    <h3>Il bound O(log^2(n)) di Tup</h3>
+	Sistemi di build come Tup, preferiscono invece tenere memorizzato uno stato del grafo completo su disco (un database SQLite).
+<br/>
+Nel grafo, Tup memorizza anche i comandi usati per generare i file, questo serve a:
+<ul>
+    <li>Tenere traccia della generazione multipla di file</li>
+    <li>Rieseguire i comandi, quando un argomento/opzione di questi viene cambiata</li>
+    <li>Cancellare i file generati, quando il comando non è più richiesto</li>
+</ul>
+</section>
+<section>
+Da questo, Tup poi ricava la lista dei cambiamenti in tempo O(log(n)) (essendo i nodi indicizzati nel db)
+<br/>
+A questo punto, ricavando le dipendenze si può ottenere il grafo parziale che rappresenta i passi che verranno svolti nella build.
+<br/>
+Nel caso di un progetto tipico, questo viene strutturato come un albero sul filesystem, permettendoci quindi di ottenere un tempo atteso come O(log(n)), da qui O(log^2(n)) per l'intera build.
+<p class="fragment">
+    <a href="http://gittup.org/tup/build_system_rules_and_algorithms.pdf">
+<i>Build System Rules and Algorithms</i>
+</a>
+</p>
+</section>
+</section>
+<section>
+    <section>
+<h3>Redo</h3>
+<p>Questo build sytem ha un approccio diverso: anch'esso punta ad avere un completo grafo di tutte le dipendenze, ma queste vengono specificate all'interno di diversi file e verranno letti da processi di redo chiamati ricorsivamente</p>
+<br/>
+<p class="fragment">
+Un primo prototipo di redo è stato implementato in sole 250 righe Bash! (Mentre l'implementazione di riferimento sono meno di 2000 righe Python)
+</p>
+    </section>
+<section>
+<p>Per ottenere un binario chiamato myprog, da due sorgenti "a.c" e "b.c", sono necessari solo 2 file:</p>
+<br/>
+    <pre>default.o.d
+</pre><pre>
+<code>redo-ifchange $2.c
+gcc -MD -MF $2.d -c -o $3 $2.c
+read DEPS <$2.d
+redo-ifchange ${DEPS#*:}</code></pre>
+
+<br/>
+    <pre>myprog.do
+</pre><pre>
+<code>DEPS="a.o b.o"
+redo-ifchange $DEPS
+gcc -o $3 $DEPS</code></pre>
+
+</section>
+<section>
+I file sono dei normali script shell (ma possono essere sostituiti da qualunque altro linguaggio di scripting) e le dipendenze sono specificate con le chiamate al comando redo-ifchange
+<br/>
+redo-ifchange indica di rieseguire lo script corrente, solo nel caso in cui le dipendenze (fornite come argomento) siano cambiate
+</section>
+<section>
+Per verificare se queste dipendenze sono cambiate, anche redo usa lo stesso approccio di tup: un database sqlite
+<br/>
+Se queste non sono cambiate, redo deve solo esaminare il db, senza dover rileggere ed eseguire i relativi file .do
+<br/>
+Le dipendenze, come in default.o.do possono essere calcolate facilmente usando un altro programma esterno, come lo stesso gcc usato per compilare, senza bisogno di alcuna sintassi particolare
+</section>
+<section>
+Redo abbraccia la filosofia Unix di piccoli programmi componibili grazie a pipeline e ridirezioni dell'output, e di default aggiunge tutto l'output nel file generato, questo permette, con queste 2 semplici righe:
+<br/>
+<pre><code>
+redo-ifchange filelist
+grep ^src/ filelist</code></pre>
+<br/>
+di rigenererare una lista intermedia di dipendenze che potrà essere quindi riusata dal resto della build.
+</section>
+<section>
+Redo disincentiva l'uso di variabili globali, e spingendo l'unica vera informazione che dev'essere accessibile a tutte le parti della build (ovvero il grafo delle dipendenze) in un unico db, è possibile ripetere una parte della build che aveva dato errore senza problemi, essendo ogni passaggio modulare.
+</section>
+<section>
+Questo viene anche invogliato dal formato stesso dell'output, ecco un ipotetico esempio:
+<br/>
+<pre><code>$ redo t/c
+redo  t/c
+redo    t/c.c
+redo      t/c.c.c
+redo        t/c.c.c.b
+redo          t/c.c.c.b.b</code></pre>
+
+</section>
+<section>
+
+L'indentazione caratterizza il livello della ricorsione a cui è arrivato redo, ma copiando e incollando l'ultima riga per rieseguirla verbosamente, ci possiamo rendere conto che ognuno di questi è un comando valido:
+<br/>
+<pre><code>$ redo t/c.c.c.b.b -x
+redo  t/c.c.c.b.b
+* sh -ex default.b.do c.c.c.b .b c.c.c.b.b.redo2.tmp
++ redo-ifchange c.c.c.b.b.a
++ echo a-to-b
++ cat c.c.c.b.b.a
++ ./sleep 1.1
+redo  t/c.c.c.b.b (done)</code></pre>
+
+</section>
+<section>
+Un altro vantaggio è quindi l'evidente assenza di flag ed opzioni ripetute centinaia di volte nell'output delle tipiche compilazioni con make, output reso ancor meno leggibile nel caso in cui la compilazione sia avvenuta in parallelo, nascondendo quindi l'ordine logico che sottende alla build
+<br/>
+<br/>
+<p class="fragment">
+    <a href="https://github.com/apenwarr/redo">
+<i>Redo on Github</i>
+</a>
+</section>
+</section>
+<section>
+<section>
+Altri sistemi di build o risorse interessanti:
+<br/>
+<br/>
+<ul>
+    <li>
+<a href="http://martine.github.com/ninja/manual.html">Ninja: un build system veloce e di "basso livello"</a>
+</li>
+    <li>
+<a href="https://code.google.com/p/fabricate/">Fabricate: trova le dipendenze automaticamente</a>
+</li>
+<li>
+<a href="http://hackage.haskell.org/package/shake">Shake: un altro strumento che si concentra sulla gestione accurata delle dipendenze e rebuild minimi </a>
+</li>
+    <li><a href="https://github.com/dmoulding/boilermake">Boilermake: un boilerplate makefile che segue un approccio non ricorsivo</a></li>
+</ul>
+</section>
+<section>
+Altri sistemi di build o risorse interessanti:
+<br/>
+<br/>
+<ul><li><a href="http://web.archive.org/web/20051231082427/http://mindview.net/WebLog/log-0046">Il punto di vista di Bruce Eckel nel 2004 su Ant, le alternative disponibili all'epoca e le difficoltà nel loro sviluppo</a></li>
+<li><a href="http://web.archive.org/web/20040602210721/http://x180.net/Articles/Java/AntAndXML.html">Un linguaggio puramente dichiarativo come XML non è una buona scelta per un sistema di build: come James Duncan Davidson arrivò a sceglierlo nella creazione di Ant</a></li>
+</ul>
+</section>
+</section>
+			</div>
+		</div>
+		<script src="reveal.js/lib/js/head.min.js"></script>
+		<script src="reveal.js/js/reveal.min.js"></script>
+		<script>
+			Reveal.initialize({
+			rollingLinks: false,
+			dependencies: [
+			{src: 'reveal.js/lib/js/highlight.js', async: true, callback: function() { window.hljs.initHighlightingOnLoad(); }},
+			{src: 'reveal.js/plugin/notes/notes.js', async: true, condition: function() { return !!document.body.classList; }},
+			],
+			})
+		</script>
+	</body>
+</html>
